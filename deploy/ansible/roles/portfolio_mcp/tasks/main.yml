@@ -1,0 +1,42 @@
+---
+- name: Verify supported operating system family
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == portfolio_expected_os_family
+      - ansible_distribution == portfolio_expected_distribution
+    fail_msg: >-
+      Unsupported operating system. Expected Ubuntu/Debian-family host,
+      got {{ ansible_distribution }} {{ ansible_distribution_version }}.
+    success_msg: >-
+      Supported operating system detected:
+      {{ ansible_distribution }} {{ ansible_distribution_version }}.
+
+- name: Verify supported Ubuntu release
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution_version == portfolio_supported_ubuntu_release
+    fail_msg: >-
+      Unsupported Ubuntu release {{ ansible_distribution_version }}.
+      This deployment is certified for Ubuntu
+      {{ portfolio_supported_ubuntu_release }} only.
+    success_msg: >-
+      Certified Ubuntu {{ portfolio_supported_ubuntu_release }} release detected.
+
+- name: Verify systemd is the service manager
+  ansible.builtin.assert:
+    that:
+      - ansible_service_mgr == "systemd"
+    fail_msg: >-
+      systemd is required for this deployment.
+    success_msg: >-
+      systemd service manager detected.
+
+- name: Display deployment target contract
+  ansible.builtin.debug:
+    msg:
+      - "Application directory: {{ portfolio_app_dir }}"
+      - "Configuration directory: {{ portfolio_config_dir }}"
+      - "State directory: {{ portfolio_state_dir }}"
+      - "Service identity: {{ portfolio_service_user }}:{{ portfolio_service_group }}"
+      - "Python baseline: {{ portfolio_python_version }}"
+      - "MCP bind: {{ portfolio_bind_host }}:{{ portfolio_bind_port }}"

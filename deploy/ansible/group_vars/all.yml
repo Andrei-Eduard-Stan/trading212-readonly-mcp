@@ -1,0 +1,19 @@
+portfolio_service_user: portfolio
+portfolio_service_group: portfolio
+
+portfolio_app_dir: /opt/portfolio-hub
+portfolio_config_dir: /etc/portfolio-hub
+portfolio_state_dir: /var/lib/portfolio-hub
+portfolio_cache_dir: /var/lib/portfolio-hub/cache/trading212
+
+portfolio_python_version: "3.14.4"
+
+portfolio_service_name: portfolio-mcp
+portfolio_service_unit: /etc/systemd/system/portfolio-mcp.service
+
+portfolio_bind_host: "127.0.0.1"
+portfolio_bind_port: 8000
+
+portfolio_expected_os_family: Debian
+portfolio_expected_distribution: Ubuntu
+portfolio_supported_ubuntu_release: "26.04"

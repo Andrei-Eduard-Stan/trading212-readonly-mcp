@@ -1,0 +1,8 @@
+---
+- name: Provision Trading 212 read-only MCP
+  hosts: localhost
+  gather_facts: true
+  become: true
+
+  roles:
+    - portfolio_mcp
