@@ -208,6 +208,7 @@
       - --python
       - "{{ portfolio_python_after.stdout | trim }}"
       - "{{ portfolio_venv_dir }}"
+  register: portfolio_venv_create
   when: >-
     portfolio_venv_before.rc != 0 or
     ('Python ' ~ portfolio_python_version) not in portfolio_venv_before.stdout
@@ -247,6 +248,7 @@
       - "{{ portfolio_venv_dir }}/bin/python"
       - --link-mode=copy
       - "{{ portfolio_runtime_lock }}"
+  register: portfolio_dependency_sync
   when: portfolio_dependency_check.rc == 1
 
 - name: Verify virtual environment Python version
@@ -288,6 +290,7 @@
     group: "{{ portfolio_service_group }}"
     mode: "0640"
   loop: "{{ portfolio_application_files }}"
+  register: portfolio_application_copy
 
 - name: Verify deployed application files byte-for-byte
   ansible.builtin.command:
@@ -351,3 +354,47 @@
   ansible.builtin.systemd_service:
     daemon_reload: true
   when: portfolio_service_unit_copy.changed
+
+- name: Inspect required Trading 212 credential files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop: "{{ portfolio_required_secret_files }}"
+  register: portfolio_secret_stats
+  no_log: true
+
+- name: Verify required Trading 212 credential file contract
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+      - not item.stat.islnk
+      - item.stat.size | int > 0
+      - item.stat.pw_name == portfolio_secret_owner
+      - item.stat.gr_name == portfolio_secret_group
+      - item.stat.mode == portfolio_secret_mode
+    fail_msg: >-
+      Required Trading 212 credential file is missing or violates the
+      deployment security contract. Service startup is blocked.
+    quiet: true
+  loop: "{{ portfolio_secret_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  no_log: true
+
+- name: Determine whether controlled service restart is required
+  ansible.builtin.set_fact:
+    portfolio_service_restart_required: >-
+      {{
+        (portfolio_venv_create.changed | default(false)) or
+        (portfolio_dependency_sync.changed | default(false)) or
+        (portfolio_application_copy.changed | default(false)) or
+        (portfolio_service_unit_copy.changed | default(false))
+      }}
+  changed_when: false
+
+- name: Enable and start or restart Portfolio MCP after credential gate
+  ansible.builtin.systemd_service:
+    name: "{{ portfolio_service_name }}"
+    enabled: true
+    state: "{{ 'restarted' if portfolio_service_restart_required else 'started' }}"

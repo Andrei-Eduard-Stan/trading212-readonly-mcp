@@ -31,3 +31,13 @@ portfolio_application_files:
   - portfolio_accounting.py
   - portfolio_snapshot_service.py
   - requirements.txt
+
+portfolio_api_key_file: /etc/portfolio-hub/trading212_api_key
+portfolio_api_secret_file: /etc/portfolio-hub/trading212_api_secret
+portfolio_secret_owner: root
+portfolio_secret_group: portfolio
+portfolio_secret_mode: "0640"
+
+portfolio_required_secret_files:
+  - "{{ portfolio_api_key_file }}"
+  - "{{ portfolio_api_secret_file }}"

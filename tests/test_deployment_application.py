@@ -73,7 +73,7 @@ def test_deployed_source_is_validated_without_writing_bytecode():
     assert 'PYTHONDONTWRITEBYTECODE: "1"' in text
 
 
-def test_systemd_unit_is_deployed_but_service_is_not_started():
+def test_systemd_unit_is_deployed_without_pre_gate_startup():
     text = TASKS.read_text(encoding="utf-8")
 
     assert 'src: "{{ playbook_dir }}/../portfolio-mcp.service"' in text
@@ -82,6 +82,12 @@ def test_systemd_unit_is_deployed_but_service_is_not_started():
     assert "register: portfolio_service_unit_copy" in text
     assert "daemon_reload: true" in text
     assert "when: portfolio_service_unit_copy.changed" in text
+
+    secret_gate = text.index(
+        "- name: Inspect required Trading 212 credential files"
+    )
+
+    pre_gate = text[:secret_gate]
 
     forbidden = (
         "state: started",
@@ -92,4 +98,4 @@ def test_systemd_unit_is_deployed_but_service_is_not_started():
     )
 
     for value in forbidden:
-        assert value not in text
+        assert value not in pre_gate
