@@ -17,3 +17,10 @@ portfolio_bind_port: 8000
 portfolio_expected_os_family: Debian
 portfolio_expected_distribution: Ubuntu
 portfolio_supported_ubuntu_release: "26.04"
+
+portfolio_uv_version: "0.12.9"
+portfolio_uv_bin: /usr/local/bin/uv
+
+portfolio_python_install_dir: /opt/portfolio-hub/python
+portfolio_venv_dir: /opt/portfolio-hub/venv
+portfolio_runtime_lock: /opt/portfolio-hub/requirements.lock.txt

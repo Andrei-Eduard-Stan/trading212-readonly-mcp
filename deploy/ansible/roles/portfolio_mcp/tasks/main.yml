@@ -87,3 +87,195 @@
     owner: "{{ portfolio_service_user }}"
     group: "{{ portfolio_service_group }}"
     mode: "0750"
+
+- name: Ensure runtime bootstrap packages are installed
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Inspect installed uv version
+  ansible.builtin.command:
+    argv:
+      - "{{ portfolio_uv_bin }}"
+      - "--version"
+  register: portfolio_uv_version_before
+  changed_when: false
+  failed_when: false
+
+- name: Download pinned uv installer
+  ansible.builtin.get_url:
+    url: "https://astral.sh/uv/{{ portfolio_uv_version }}/install.sh"
+    dest: "/tmp/uv-installer-{{ portfolio_uv_version }}.sh"
+    owner: root
+    group: root
+    mode: "0755"
+  when: >-
+    portfolio_uv_version_before.rc != 0 or
+    ('uv ' ~ portfolio_uv_version) not in portfolio_uv_version_before.stdout
+
+- name: Install pinned unmanaged uv
+  ansible.builtin.command:
+    argv:
+      - sh
+      - "/tmp/uv-installer-{{ portfolio_uv_version }}.sh"
+  environment:
+    UV_UNMANAGED_INSTALL: /usr/local/bin
+  when: >-
+    portfolio_uv_version_before.rc != 0 or
+    ('uv ' ~ portfolio_uv_version) not in portfolio_uv_version_before.stdout
+
+- name: Verify pinned uv version
+  ansible.builtin.command:
+    argv:
+      - "{{ portfolio_uv_bin }}"
+      - "--version"
+  register: portfolio_uv_version_after
+  changed_when: false
+
+- name: Assert pinned uv version
+  ansible.builtin.assert:
+    that:
+      - "('uv ' ~ portfolio_uv_version) in portfolio_uv_version_after.stdout"
+    fail_msg: >-
+      uv version mismatch. Expected {{ portfolio_uv_version }},
+      got {{ portfolio_uv_version_after.stdout }}.
+
+- name: Ensure managed Python installation directory exists
+  ansible.builtin.file:
+    path: "{{ portfolio_python_install_dir }}"
+    state: directory
+    owner: root
+    group: "{{ portfolio_service_group }}"
+    mode: "0755"
+
+- name: Locate pinned managed Python
+  ansible.builtin.command:
+    argv:
+      - "{{ portfolio_uv_bin }}"
+      - python
+      - find
+      - "{{ portfolio_python_version }}"
+      - --managed-python
+      - --install-dir
+      - "{{ portfolio_python_install_dir }}"
+  register: portfolio_python_before
+  changed_when: false
+  failed_when: false
+
+- name: Install pinned managed Python
+  ansible.builtin.command:
+    argv:
+      - "{{ portfolio_uv_bin }}"
+      - python
+      - install
+      - "{{ portfolio_python_version }}"
+      - --install-dir
+      - "{{ portfolio_python_install_dir }}"
+      - --no-bin
+  when: portfolio_python_before.rc != 0
+
+- name: Locate installed pinned Python
+  ansible.builtin.command:
+    argv:
+      - "{{ portfolio_uv_bin }}"
+      - python
+      - find
+      - "{{ portfolio_python_version }}"
+      - --managed-python
+      - --install-dir
+      - "{{ portfolio_python_install_dir }}"
+  register: portfolio_python_after
+  changed_when: false
+
+- name: Inspect deployed virtual environment
+  ansible.builtin.command:
+    argv:
+      - "{{ portfolio_venv_dir }}/bin/python"
+      - --version
+  register: portfolio_venv_before
+  changed_when: false
+  failed_when: false
+
+- name: Create pinned application virtual environment
+  ansible.builtin.command:
+    argv:
+      - "{{ portfolio_uv_bin }}"
+      - venv
+      - --python
+      - "{{ portfolio_python_after.stdout | trim }}"
+      - "{{ portfolio_venv_dir }}"
+  when: >-
+    portfolio_venv_before.rc != 0 or
+    ('Python ' ~ portfolio_python_version) not in portfolio_venv_before.stdout
+
+- name: Copy exact production dependency lock
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../requirements.lock.txt"
+    dest: "{{ portfolio_runtime_lock }}"
+    owner: root
+    group: "{{ portfolio_service_group }}"
+    mode: "0640"
+
+- name: Check whether deployed dependency set matches production lock
+  ansible.builtin.shell: |
+    set -euo pipefail
+    expected="$(mktemp)"
+    installed="$(mktemp)"
+    trap 'rm -f "$expected" "$installed"' EXIT
+    tr '[:upper:]_' '[:lower:]-' < "{{ portfolio_runtime_lock }}" | sort > "$expected"
+    "{{ portfolio_uv_bin }}" pip freeze --python "{{ portfolio_venv_dir }}/bin/python" |
+      tr '[:upper:]_' '[:lower:]-' |
+      sort > "$installed"
+    diff -u "$expected" "$installed"
+  args:
+    executable: /bin/bash
+  register: portfolio_dependency_check
+  changed_when: false
+  failed_when: portfolio_dependency_check.rc not in [0, 1]
+
+- name: Synchronize exact production dependency environment
+  ansible.builtin.command:
+    argv:
+      - "{{ portfolio_uv_bin }}"
+      - pip
+      - sync
+      - --python
+      - "{{ portfolio_venv_dir }}/bin/python"
+      - --link-mode=copy
+      - "{{ portfolio_runtime_lock }}"
+  when: portfolio_dependency_check.rc == 1
+
+- name: Verify virtual environment Python version
+  ansible.builtin.command:
+    argv:
+      - "{{ portfolio_venv_dir }}/bin/python"
+      - --version
+  register: portfolio_venv_python
+  changed_when: false
+
+- name: Assert virtual environment Python version
+  ansible.builtin.assert:
+    that:
+      - "('Python ' ~ portfolio_python_version) in portfolio_venv_python.stdout"
+    fail_msg: >-
+      Application virtual environment has the wrong Python version:
+      {{ portfolio_venv_python.stdout }}.
+
+- name: Verify exact deployed dependency set
+  ansible.builtin.shell: |
+    set -euo pipefail
+    expected="$(mktemp)"
+    installed="$(mktemp)"
+    trap 'rm -f "$expected" "$installed"' EXIT
+    tr '[:upper:]_' '[:lower:]-' < "{{ portfolio_runtime_lock }}" | sort > "$expected"
+    "{{ portfolio_uv_bin }}" pip freeze --python "{{ portfolio_venv_dir }}/bin/python" \
+      | tr '[:upper:]_' '[:lower:]-' \
+      | sort > "$installed"
+    diff -u "$expected" "$installed"
+  args:
+    executable: /bin/bash
+  changed_when: false
