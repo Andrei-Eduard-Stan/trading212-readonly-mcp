@@ -40,3 +40,50 @@
       - "Service identity: {{ portfolio_service_user }}:{{ portfolio_service_group }}"
       - "Python baseline: {{ portfolio_python_version }}"
       - "MCP bind: {{ portfolio_bind_host }}:{{ portfolio_bind_port }}"
+
+- name: Ensure portfolio service group exists
+  ansible.builtin.group:
+    name: "{{ portfolio_service_group }}"
+    system: true
+    state: present
+
+- name: Ensure portfolio service account exists
+  ansible.builtin.user:
+    name: "{{ portfolio_service_user }}"
+    group: "{{ portfolio_service_group }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    state: present
+
+- name: Ensure application directory exists
+  ansible.builtin.file:
+    path: "{{ portfolio_app_dir }}"
+    state: directory
+    owner: root
+    group: "{{ portfolio_service_group }}"
+    mode: "0750"
+
+- name: Ensure configuration directory exists
+  ansible.builtin.file:
+    path: "{{ portfolio_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ portfolio_service_group }}"
+    mode: "0750"
+
+- name: Ensure state directory exists
+  ansible.builtin.file:
+    path: "{{ portfolio_state_dir }}"
+    state: directory
+    owner: "{{ portfolio_service_user }}"
+    group: "{{ portfolio_service_group }}"
+    mode: "0750"
+
+- name: Ensure Trading 212 cache directory exists
+  ansible.builtin.file:
+    path: "{{ portfolio_cache_dir }}"
+    state: directory
+    owner: "{{ portfolio_service_user }}"
+    group: "{{ portfolio_service_group }}"
+    mode: "0750"
