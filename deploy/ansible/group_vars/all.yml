@@ -24,3 +24,10 @@ portfolio_uv_bin: /usr/local/bin/uv
 portfolio_python_install_dir: /opt/portfolio-hub/python
 portfolio_venv_dir: /opt/portfolio-hub/venv
 portfolio_runtime_lock: /opt/portfolio-hub/requirements.lock.txt
+
+portfolio_application_files:
+  - server.py
+  - trading212.py
+  - portfolio_accounting.py
+  - portfolio_snapshot_service.py
+  - requirements.txt

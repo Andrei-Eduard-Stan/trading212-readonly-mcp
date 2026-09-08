@@ -279,3 +279,75 @@
   args:
     executable: /bin/bash
   changed_when: false
+
+- name: Deploy reviewed application files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../src/{{ item }}"
+    dest: "{{ portfolio_app_dir }}/{{ item }}"
+    owner: root
+    group: "{{ portfolio_service_group }}"
+    mode: "0640"
+  loop: "{{ portfolio_application_files }}"
+
+- name: Verify deployed application files byte-for-byte
+  ansible.builtin.command:
+    argv:
+      - cmp
+      - -s
+      - "{{ playbook_dir }}/../../src/{{ item }}"
+      - "{{ portfolio_app_dir }}/{{ item }}"
+  loop: "{{ portfolio_application_files }}"
+  changed_when: false
+
+- name: Syntax-check deployed application modules without writing bytecode
+  ansible.builtin.command:
+    argv:
+      - "{{ portfolio_venv_dir }}/bin/python"
+      - -c
+      - >-
+        from pathlib import Path;
+        files = [
+          "{{ portfolio_app_dir }}/server.py",
+          "{{ portfolio_app_dir }}/trading212.py",
+          "{{ portfolio_app_dir }}/portfolio_accounting.py",
+          "{{ portfolio_app_dir }}/portfolio_snapshot_service.py"
+        ];
+        [compile(Path(path).read_text(encoding="utf-8"), path, "exec") for path in files]
+  changed_when: false
+
+- name: Import credential-independent deployed modules
+  ansible.builtin.command:
+    argv:
+      - "{{ portfolio_venv_dir }}/bin/python"
+      - -c
+      - >-
+        import sys;
+        sys.path.insert(0, "{{ portfolio_app_dir }}");
+        import portfolio_accounting;
+        import portfolio_snapshot_service
+  environment:
+    PYTHONDONTWRITEBYTECODE: "1"
+  changed_when: false
+
+- name: Deploy canonical systemd unit
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../portfolio-mcp.service"
+    dest: "{{ portfolio_service_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: portfolio_service_unit_copy
+
+- name: Verify deployed systemd unit byte-for-byte
+  ansible.builtin.command:
+    argv:
+      - cmp
+      - -s
+      - "{{ playbook_dir }}/../portfolio-mcp.service"
+      - "{{ portfolio_service_unit }}"
+  changed_when: false
+
+- name: Reload systemd after unit change
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: portfolio_service_unit_copy.changed
