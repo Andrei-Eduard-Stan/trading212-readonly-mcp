@@ -85,16 +85,17 @@ def test_service_start_or_restart_occurs_only_after_secret_gate():
     assert "'started'" in startup_section
 
 
-def test_deployment_does_not_embed_or_copy_secret_values():
+def test_deployment_does_not_embed_broker_auth_values():
     text = TASKS.read_text(encoding="utf-8")
 
-    secret_section = text[
-        text.index("- name: Inspect required Trading 212 credential files") :
+    recovery_section = text[
+        text.index("- name: Inspect optional broker auth recovery directory") :
     ]
 
-    assert "ansible.builtin.copy:" not in secret_section
-    assert "content:" not in secret_section
-    assert "lookup(" not in secret_section
+    assert "content:" not in recovery_section
+    assert "lookup(" not in recovery_section
+    assert "remote_src: true" in recovery_section
+    assert "no_log: true" in recovery_section
 
 
 def test_restart_decision_consumes_runtime_change_signals():

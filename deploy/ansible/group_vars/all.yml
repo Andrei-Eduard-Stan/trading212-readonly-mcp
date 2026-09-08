@@ -41,3 +41,11 @@ portfolio_secret_mode: "0640"
 portfolio_required_secret_files:
   - "{{ portfolio_api_key_file }}"
   - "{{ portfolio_api_secret_file }}"
+
+portfolio_recovery_auth_dir: ""
+
+portfolio_recovery_auth_files:
+  - source_name: trading212_api_key
+    destination: "{{ portfolio_api_key_file }}"
+  - source_name: trading212_api_secret
+    destination: "{{ portfolio_api_secret_file }}"

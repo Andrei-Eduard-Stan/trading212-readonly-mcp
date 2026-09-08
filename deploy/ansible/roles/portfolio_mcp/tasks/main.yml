@@ -355,6 +355,65 @@
     daemon_reload: true
   when: portfolio_service_unit_copy.changed
 
+- name: Inspect optional broker auth recovery directory
+  ansible.builtin.stat:
+    path: "{{ portfolio_recovery_auth_dir }}"
+    follow: false
+  register: portfolio_recovery_auth_dir_stat
+  when: portfolio_recovery_auth_dir | length > 0
+  no_log: true
+
+- name: Verify optional broker auth recovery directory
+  ansible.builtin.assert:
+    that:
+      - portfolio_recovery_auth_dir is match('^/')
+      - portfolio_recovery_auth_dir_stat.stat.exists
+      - portfolio_recovery_auth_dir_stat.stat.isdir
+      - not portfolio_recovery_auth_dir_stat.stat.islnk
+    fail_msg: >-
+      Broker auth recovery directory is invalid. Recovery is blocked.
+    quiet: true
+  when: portfolio_recovery_auth_dir | length > 0
+  no_log: true
+
+- name: Inspect broker auth recovery files
+  ansible.builtin.stat:
+    path: "{{ portfolio_recovery_auth_dir }}/{{ item.source_name }}"
+    follow: false
+  loop: "{{ portfolio_recovery_auth_files }}"
+  register: portfolio_recovery_auth_stats
+  when: portfolio_recovery_auth_dir | length > 0
+  no_log: true
+
+- name: Verify broker auth recovery files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+      - not item.stat.islnk
+      - item.stat.size | int > 0
+    fail_msg: >-
+      Broker auth recovery input is missing or invalid. Recovery is blocked.
+    quiet: true
+  loop: "{{ portfolio_recovery_auth_stats.results }}"
+  loop_control:
+    label: "broker-auth-input"
+  when: portfolio_recovery_auth_dir | length > 0
+  no_log: true
+
+- name: Restore broker auth files into protected configuration
+  ansible.builtin.copy:
+    src: "{{ portfolio_recovery_auth_dir }}/{{ item.source_name }}"
+    dest: "{{ item.destination }}"
+    remote_src: true
+    owner: "{{ portfolio_secret_owner }}"
+    group: "{{ portfolio_secret_group }}"
+    mode: "{{ portfolio_secret_mode }}"
+  loop: "{{ portfolio_recovery_auth_files }}"
+  register: portfolio_recovery_auth_copy
+  when: portfolio_recovery_auth_dir | length > 0
+  no_log: true
+
 - name: Inspect required Trading 212 credential files
   ansible.builtin.stat:
     path: "{{ item }}"
@@ -389,7 +448,8 @@
         (portfolio_venv_create.changed | default(false)) or
         (portfolio_dependency_sync.changed | default(false)) or
         (portfolio_application_copy.changed | default(false)) or
-        (portfolio_service_unit_copy.changed | default(false))
+        (portfolio_service_unit_copy.changed | default(false)) or
+        (portfolio_recovery_auth_copy.changed | default(false))
       }}
   changed_when: false
 
