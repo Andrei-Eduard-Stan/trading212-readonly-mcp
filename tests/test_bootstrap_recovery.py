@@ -52,11 +52,39 @@ def test_bootstrap_performs_real_deployment_not_check_only():
     assert "--check" not in text
 
 
-def test_bootstrap_fails_closed_on_host_and_recovery_dependencies():
+def test_bootstrap_fails_closed_on_unsupported_host():
     text = BOOTSTRAP.read_text(encoding="utf-8")
 
     assert '[ "${ID:-}" = "ubuntu" ]' in text
     assert '[ "${VERSION_ID:-}" = "26.04" ]' in text
+
+
+def test_bootstrap_installs_and_verifies_its_own_deployment_tooling():
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert "ensure_bootstrap_tooling()" in text
+    assert "apt-get update" in text
+    assert "ca-certificates" in text
+    assert "python3" in text
+    assert "python3-apt" in text
+    assert "ansible-core" in text
+
     assert "command -v ansible-playbook" in text
     assert "command -v python3" in text
+
+
+def test_bootstrap_installs_age_only_for_encrypted_recovery():
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert 'if [ -n "$RECOVERY_BUNDLE" ]; then' in text
+    assert "BOOTSTRAP_PACKAGES+=(age)" in text
     assert "command -v age" in text
+
+
+def test_bootstrap_can_enable_universe_when_required():
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert "ensure_universe_repository()" in text
+    assert "apt-cache show ansible-core" in text
+    assert "software-properties-common" in text
+    assert "add-apt-repository -y universe" in text

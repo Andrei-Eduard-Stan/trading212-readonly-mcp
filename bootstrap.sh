@@ -18,6 +18,55 @@ pass() {
     printf '[PASS] %s\n' "$1"
 }
 
+ensure_universe_repository() {
+    if apt-cache show ansible-core >/dev/null 2>&1; then
+        return
+    fi
+
+    printf '[INFO] Enabling Ubuntu universe repository.\n'
+
+    DEBIAN_FRONTEND=noninteractive apt-get install -y         --no-install-recommends         software-properties-common
+
+    add-apt-repository -y universe
+    apt-get update
+
+    apt-cache show ansible-core >/dev/null 2>&1 ||         fail "ansible-core remains unavailable after enabling universe"
+}
+
+ensure_bootstrap_tooling() {
+    command -v apt-get >/dev/null 2>&1 ||         fail "apt-get is required on the supported Ubuntu host"
+
+    command -v apt-cache >/dev/null 2>&1 ||         fail "apt-cache is required on the supported Ubuntu host"
+
+    printf '[INFO] Refreshing Ubuntu package metadata.\n'
+    apt-get update
+
+    ensure_universe_repository
+
+    BOOTSTRAP_PACKAGES=(
+        ca-certificates
+        python3
+        python3-apt
+        ansible-core
+    )
+
+    if [ -n "$RECOVERY_BUNDLE" ]; then
+        BOOTSTRAP_PACKAGES+=(age)
+    fi
+
+    printf '[INFO] Ensuring bootstrap dependencies are installed.\n'
+
+    DEBIAN_FRONTEND=noninteractive apt-get install -y         --no-install-recommends         "${BOOTSTRAP_PACKAGES[@]}"
+
+    command -v ansible-playbook >/dev/null 2>&1 ||         fail "ansible-playbook is unavailable after bootstrap installation"
+
+    command -v python3 >/dev/null 2>&1 ||         fail "python3 is unavailable after bootstrap installation"
+
+    if [ -n "$RECOVERY_BUNDLE" ]; then
+        command -v age >/dev/null 2>&1 ||             fail "age is unavailable after bootstrap installation"
+    fi
+}
+
 usage() {
     cat <<'USAGE'
 Usage:
@@ -83,20 +132,13 @@ printf 'Mode: deployment\n\n'
 [ "${VERSION_ID:-}" = "26.04" ] || \
     fail "unsupported Ubuntu release: expected 26.04, got ${VERSION_ID:-unknown}"
 
-command -v ansible-playbook >/dev/null 2>&1 || \
-    fail "ansible-playbook is not installed yet"
-
 pass "Ubuntu 26.04 host"
 pass "root privileges"
-pass "Ansible available"
+
+ensure_bootstrap_tooling
+pass "Bootstrap tooling available"
 
 if [ -n "$RECOVERY_BUNDLE" ]; then
-    command -v python3 >/dev/null 2>&1 || \
-        fail "python3 is required for recovery"
-
-    command -v age >/dev/null 2>&1 || \
-        fail "age is required for encrypted recovery"
-
     RECOVERY_DIR="$(mktemp -d /run/trading212-recovery.XXXXXX)"
     chmod 0700 "$RECOVERY_DIR"
 
