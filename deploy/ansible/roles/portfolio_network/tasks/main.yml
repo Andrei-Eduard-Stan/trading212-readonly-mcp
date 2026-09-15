@@ -1,0 +1,464 @@
+---
+- name: Validate portfolio network recovery contract
+  ansible.builtin.assert:
+    that:
+      - portfolio_bind_host == "127.0.0.1"
+      - (portfolio_bind_port | int) == 8000
+      - portfolio_tailscale_expected_hostname == "portfolio-hub"
+      - portfolio_tailscale_expected_dns_name == "portfolio-hub.tail894a11.ts.net."
+      - portfolio_tailscale_interface == "tailscale0"
+    fail_msg: "Portfolio network recovery contract is inconsistent."
+
+- name: Ensure APT keyring directory exists
+  ansible.builtin.file:
+    path: /usr/share/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install verified Tailscale signing key
+  ansible.builtin.get_url:
+    url: "{{ portfolio_tailscale_keyring_url }}"
+    dest: "{{ portfolio_tailscale_keyring_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    checksum: "sha256:{{ portfolio_tailscale_keyring_sha256 }}"
+
+- name: Configure Tailscale stable repository
+  ansible.builtin.copy:
+    dest: "{{ portfolio_tailscale_repo_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ portfolio_tailscale_repo_line }}\n"
+
+- name: Refresh package metadata after configuring network repositories
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Inspect installed Tailscale version
+  ansible.builtin.command:
+    argv:
+      - dpkg-query
+      - -W
+      - "-f=${Version}"
+      - tailscale
+  register: portfolio_tailscale_installed
+  changed_when: false
+  failed_when: false
+
+- name: Check installed Tailscale against verified baseline
+  ansible.builtin.command:
+    argv:
+      - dpkg
+      - --compare-versions
+      - "{{ portfolio_tailscale_installed.stdout }}"
+      - ge
+      - "{{ portfolio_tailscale_baseline_version }}"
+  register: portfolio_tailscale_baseline_check
+  changed_when: false
+  failed_when: false
+  when: portfolio_tailscale_installed.rc == 0
+
+- name: Install verified Tailscale baseline when absent or too old
+  ansible.builtin.apt:
+    name: "tailscale={{ portfolio_tailscale_baseline_version }}"
+    state: present
+    allow_downgrade: false
+  when: >-
+    portfolio_tailscale_installed.rc != 0
+    or
+    (portfolio_tailscale_baseline_check.rc | default(1)) != 0
+
+- name: Inspect installed UFW version
+  ansible.builtin.command:
+    argv:
+      - dpkg-query
+      - -W
+      - "-f=${Version}"
+      - ufw
+  register: portfolio_ufw_installed
+  changed_when: false
+  failed_when: false
+
+- name: Check installed UFW against verified baseline
+  ansible.builtin.command:
+    argv:
+      - dpkg
+      - --compare-versions
+      - "{{ portfolio_ufw_installed.stdout }}"
+      - ge
+      - "{{ portfolio_ufw_baseline_version }}"
+  register: portfolio_ufw_baseline_check
+  changed_when: false
+  failed_when: false
+  when: portfolio_ufw_installed.rc == 0
+
+- name: Install verified UFW baseline when absent or too old
+  ansible.builtin.apt:
+    name: "ufw={{ portfolio_ufw_baseline_version }}"
+    state: present
+    allow_downgrade: false
+  when: >-
+    portfolio_ufw_installed.rc != 0
+    or
+    (portfolio_ufw_baseline_check.rc | default(1)) != 0
+
+- name: Verify final Tailscale package version
+  ansible.builtin.command:
+    argv:
+      - dpkg-query
+      - -W
+      - "-f=${Version}"
+      - tailscale
+  register: portfolio_tailscale_final_version
+  changed_when: false
+
+- name: Require Tailscale at or above verified baseline
+  ansible.builtin.command:
+    argv:
+      - dpkg
+      - --compare-versions
+      - "{{ portfolio_tailscale_final_version.stdout }}"
+      - ge
+      - "{{ portfolio_tailscale_baseline_version }}"
+  changed_when: false
+
+- name: Verify final UFW package version
+  ansible.builtin.command:
+    argv:
+      - dpkg-query
+      - -W
+      - "-f=${Version}"
+      - ufw
+  register: portfolio_ufw_final_version
+  changed_when: false
+
+- name: Require UFW at or above verified baseline
+  ansible.builtin.command:
+    argv:
+      - dpkg
+      - --compare-versions
+      - "{{ portfolio_ufw_final_version.stdout }}"
+      - ge
+      - "{{ portfolio_ufw_baseline_version }}"
+  changed_when: false
+
+- name: Ensure tailscaled is enabled and running
+  ansible.builtin.systemd_service:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Inspect Tailscale authentication state
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - status
+      - --json
+  register: portfolio_tailscale_status_command
+  changed_when: false
+  failed_when: false
+
+- name: Require readable Tailscale status
+  ansible.builtin.assert:
+    that:
+      - portfolio_tailscale_status_command.rc == 0
+      - (portfolio_tailscale_status_command.stdout | trim | length) > 0
+    fail_msg: >-
+      Tailscale is not ready. No firewall changes were performed.
+      Authenticate with:
+      sudo tailscale up --hostname=portfolio-hub
+      Then reconnect to the replacement host over Tailscale and rerun bootstrap.
+
+- name: Parse Tailscale status
+  ansible.builtin.set_fact:
+    portfolio_tailscale_status: "{{ portfolio_tailscale_status_command.stdout | from_json }}"
+
+- name: Verify exact Tailscale identity before network exposure
+  ansible.builtin.assert:
+    that:
+      - portfolio_tailscale_status["BackendState"] == "Running"
+      - portfolio_tailscale_status["Self"]["HostName"] == portfolio_tailscale_expected_hostname
+      - portfolio_tailscale_status["Self"]["DNSName"] == portfolio_tailscale_expected_dns_name
+    fail_msg: >-
+      Tailscale identity does not match the verified production contract.
+      Expected portfolio-hub / portfolio-hub.tail894a11.ts.net.
+      No firewall changes were performed.
+      If Tailscale assigned portfolio-hub-1 or another suffix, resolve the
+      stale portfolio-hub node in the Tailscale control plane, authenticate
+      again with sudo tailscale up --hostname=portfolio-hub, and rerun bootstrap.
+
+- name: Verify Tailscale interface exists
+  ansible.builtin.command:
+    argv:
+      - ip
+      - link
+      - show
+      - dev
+      - "{{ portfolio_tailscale_interface }}"
+  changed_when: false
+
+- name: Inspect current Tailscale preferences
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - debug
+      - prefs
+  register: portfolio_tailscale_prefs_command
+  changed_when: false
+  no_log: true
+
+- name: Parse current Tailscale preferences
+  ansible.builtin.set_fact:
+    portfolio_tailscale_prefs: "{{ portfolio_tailscale_prefs_command.stdout | from_json }}"
+  no_log: true
+
+- name: Converge verified Tailscale DNS and update preferences
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - set
+      - --accept-dns=true
+      - --auto-update=true
+  when: >-
+    not (
+      (portfolio_tailscale_prefs["CorpDNS"] | bool)
+      and
+      (portfolio_tailscale_prefs["AutoUpdate"]["Check"] | bool)
+      and
+      (portfolio_tailscale_prefs["AutoUpdate"]["Apply"] | bool)
+    )
+  changed_when: true
+
+- name: Re-read Tailscale preferences
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - debug
+      - prefs
+  register: portfolio_tailscale_prefs_verify_command
+  changed_when: false
+  no_log: true
+
+- name: Parse verified Tailscale preferences
+  ansible.builtin.set_fact:
+    portfolio_tailscale_prefs_verified: "{{ portfolio_tailscale_prefs_verify_command.stdout | from_json }}"
+  no_log: true
+
+- name: Verify Tailscale preferences
+  ansible.builtin.assert:
+    that:
+      - portfolio_tailscale_prefs_verified["CorpDNS"] | bool
+      - portfolio_tailscale_prefs_verified["AutoUpdate"]["Check"] | bool
+      - portfolio_tailscale_prefs_verified["AutoUpdate"]["Apply"] | bool
+  no_log: true
+
+- name: Verify portfolio MCP is active before exposing Funnel
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - portfolio-mcp
+  register: portfolio_mcp_network_gate
+  changed_when: false
+  failed_when: false
+
+- name: Require active portfolio MCP before Funnel
+  ansible.builtin.assert:
+    that:
+      - portfolio_mcp_network_gate.rc == 0
+      - (portfolio_mcp_network_gate.stdout | trim) == "active"
+    fail_msg: "portfolio-mcp must be active before Funnel can be configured."
+
+- name: Inspect current Funnel state
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - funnel
+      - status
+  register: portfolio_funnel_status_before
+  changed_when: false
+  failed_when: false
+
+- name: Configure persistent Funnel when required
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - funnel
+      - --bg
+      - --yes
+      - "{{ portfolio_funnel_target }}"
+  when: >-
+    portfolio_funnel_status_before.rc != 0
+    or portfolio_funnel_public_url not in portfolio_funnel_status_before.stdout
+    or portfolio_funnel_target not in portfolio_funnel_status_before.stdout
+  changed_when: true
+
+- name: Verify Funnel state
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - funnel
+      - status
+  register: portfolio_funnel_status_after
+  changed_when: false
+
+- name: Require exact Funnel target
+  ansible.builtin.assert:
+    that:
+      - portfolio_funnel_public_url in portfolio_funnel_status_after.stdout
+      - portfolio_funnel_target in portfolio_funnel_status_after.stdout
+    fail_msg: "Tailscale Funnel does not match the verified production contract."
+
+- name: Inspect pre-existing UFW rules before mutation
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - show
+      - added
+  register: portfolio_ufw_added_before
+  changed_when: false
+
+- name: Extract pre-existing UFW allow rules
+  ansible.builtin.set_fact:
+    portfolio_ufw_existing_allow_rules: >-
+      {{
+        portfolio_ufw_added_before.stdout_lines
+        | select("match", "^ufw allow")
+        | list
+      }}
+
+- name: Refuse unexpected pre-existing UFW allow rules
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          portfolio_ufw_existing_allow_rules
+          | reject("equalto", portfolio_ufw_expected_ssh_rule)
+          | list
+          | length
+        ) == 0
+    fail_msg: >-
+      Unexpected pre-existing UFW allow rules were found.
+      Refusing to rewrite firewall policy automatically.
+
+- name: Inspect UFW state before convergence
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - status
+      - verbose
+  register: portfolio_ufw_status_before
+  changed_when: false
+
+- name: Set UFW default incoming policy
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - default
+      - deny
+      - incoming
+  when: "'Default: deny (incoming)' not in portfolio_ufw_status_before.stdout"
+  changed_when: true
+
+- name: Set UFW default outgoing policy
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - default
+      - allow
+      - outgoing
+  when: "'allow (outgoing)' not in portfolio_ufw_status_before.stdout"
+  changed_when: true
+
+- name: Set UFW logging to low
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - logging
+      - low
+  when: "'Logging: on (low)' not in portfolio_ufw_status_before.stdout"
+  changed_when: true
+
+- name: Allow SSH only through Tailscale interface
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - allow
+      - in
+      - on
+      - "{{ portfolio_tailscale_interface }}"
+      - to
+      - any
+      - port
+      - "{{ portfolio_ssh_port | string }}"
+      - proto
+      - tcp
+  when: >-
+    portfolio_ufw_expected_ssh_rule not in
+    portfolio_ufw_added_before.stdout_lines
+  changed_when: true
+
+- name: Enable UFW
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - --force
+      - enable
+  when: "'Status: active' not in portfolio_ufw_status_before.stdout"
+  changed_when: true
+
+- name: Verify final UFW state
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - status
+      - verbose
+  register: portfolio_ufw_status_after
+  changed_when: false
+
+- name: Extract final UFW allow rules
+  ansible.builtin.set_fact:
+    portfolio_ufw_final_allow_lines: >-
+      {{
+        portfolio_ufw_status_after.stdout_lines
+        | select("search", "ALLOW IN")
+        | list
+      }}
+
+- name: Require exact firewall exposure contract
+  ansible.builtin.assert:
+    that:
+      - "'Status: active' in portfolio_ufw_status_after.stdout"
+      - "'Logging: on (low)' in portfolio_ufw_status_after.stdout"
+      - "'Default: deny (incoming), allow (outgoing), disabled (routed)' in portfolio_ufw_status_after.stdout"
+      - portfolio_ufw_final_allow_lines | length == 2
+      - >-
+        (
+          portfolio_ufw_final_allow_lines
+          | reject("search", portfolio_tailscale_interface)
+          | list
+          | length
+        ) == 0
+    fail_msg: "Final UFW state does not match the verified production contract."
+
+- name: Inspect final listening sockets
+  ansible.builtin.command:
+    argv:
+      - ss
+      - -ltnp
+  register: portfolio_network_listeners
+  changed_when: false
+
+- name: Require loopback-only MCP listener
+  ansible.builtin.assert:
+    that:
+      - "'127.0.0.1:8000' in portfolio_network_listeners.stdout"
+      - "'0.0.0.0:8000' not in portfolio_network_listeners.stdout"
+      - "'[::]:8000' not in portfolio_network_listeners.stdout"
+      - "'0.0.0.0:443' not in portfolio_network_listeners.stdout"
+      - "'[::]:443' not in portfolio_network_listeners.stdout"
+    fail_msg: "Listener exposure does not match the verified production contract."
