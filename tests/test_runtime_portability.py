@@ -201,4 +201,3 @@ print(
     )
     assert values["auth0_client_id"] == "dr-test-client"
     assert values["required_scope"] == "portfolio:read:test"
-
