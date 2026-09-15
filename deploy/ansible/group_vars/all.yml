@@ -14,6 +14,14 @@ portfolio_service_unit: /etc/systemd/system/portfolio-mcp.service
 portfolio_bind_host: "127.0.0.1"
 portfolio_bind_port: 8000
 
+portfolio_runtime_env_file: /etc/portfolio-hub/portfolio-mcp.env
+
+portfolio_public_host: "portfolio-hub.tail894a11.ts.net"
+portfolio_resource_url: "https://portfolio-hub.tail894a11.ts.net/mcp"
+portfolio_auth0_domain: "dev-portfolio-os-mcp.uk.auth0.com"
+portfolio_auth0_client_id: "tpc_4JWsLVNpgaz5gg5F5XUNHK"
+portfolio_required_scope: "portfolio:read"
+
 portfolio_expected_os_family: Debian
 portfolio_expected_distribution: Ubuntu
 portfolio_supported_ubuntu_release: "26.04"
@@ -60,10 +68,10 @@ portfolio_tailscale_repo_file: /etc/apt/sources.list.d/tailscale.list
 portfolio_tailscale_repo_line: "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu resolute main"
 
 portfolio_tailscale_expected_hostname: portfolio-hub
-portfolio_tailscale_expected_dns_name: portfolio-hub.tail894a11.ts.net.
+portfolio_tailscale_expected_dns_name: "{{ portfolio_public_host }}."
 portfolio_tailscale_interface: tailscale0
 
-portfolio_funnel_public_url: "https://portfolio-hub.tail894a11.ts.net"
+portfolio_funnel_public_url: "https://{{ portfolio_public_host }}"
 portfolio_funnel_target: "http://127.0.0.1:8000"
 
 portfolio_ufw_baseline_version: "0.36.2-9build1"

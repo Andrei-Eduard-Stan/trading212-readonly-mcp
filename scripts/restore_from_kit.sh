@@ -5,6 +5,11 @@ export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 
 KIT_DIR=""
+
+PUBLIC_HOST_OVERRIDE=""
+RESOURCE_URL_OVERRIDE=""
+TAILSCALE_HOSTNAME_OVERRIDE=""
+
 RESTORE_ROOT="/opt/trading212-readonly-mcp-recovery"
 REPO_DIR="$RESTORE_ROOT/repository"
 
@@ -26,6 +31,15 @@ Options:
   --kit PATH
       Path to an offline Trading 212 MCP disaster-recovery kit.
 
+  --public-host HOST
+      Override the public Funnel/MCP hostname for this restore.
+
+  --tailscale-hostname HOST
+      Override the expected short Tailscale node hostname.
+
+  --resource-url URL
+      Override the OAuth/MCP resource URL independently.
+
   -h, --help
       Show this help.
 USAGE
@@ -46,6 +60,21 @@ while [ "$#" -gt 0 ]; do
         --kit)
             [ "$#" -ge 2 ] || fail "--kit requires a path"
             KIT_DIR="$2"
+            shift 2
+            ;;
+        --public-host)
+            [ "$#" -ge 2 ] || fail "--public-host requires a value"
+            PUBLIC_HOST_OVERRIDE="$2"
+            shift 2
+            ;;
+        --tailscale-hostname)
+            [ "$#" -ge 2 ] || fail "--tailscale-hostname requires a value"
+            TAILSCALE_HOSTNAME_OVERRIDE="$2"
+            shift 2
+            ;;
+        --resource-url)
+            [ "$#" -ge 2 ] || fail "--resource-url requires a value"
+            RESOURCE_URL_OVERRIDE="$2"
             shift 2
             ;;
         -h|--help)
@@ -154,9 +183,33 @@ pass "Exact repository commit $ACTUAL_COMMIT"
 [ -x "$REPO_DIR/bootstrap.sh" ] || \
     fail "restored bootstrap.sh is missing or not executable"
 
-"$REPO_DIR/bootstrap.sh" \
-    --recovery-bundle \
+BOOTSTRAP_ARGS=(
+    --recovery-bundle
     "$KIT_DIR/recovery.age"
+)
+
+if [ -n "$PUBLIC_HOST_OVERRIDE" ]; then
+    BOOTSTRAP_ARGS+=(
+        --public-host
+        "$PUBLIC_HOST_OVERRIDE"
+    )
+fi
+
+if [ -n "$TAILSCALE_HOSTNAME_OVERRIDE" ]; then
+    BOOTSTRAP_ARGS+=(
+        --tailscale-hostname
+        "$TAILSCALE_HOSTNAME_OVERRIDE"
+    )
+fi
+
+if [ -n "$RESOURCE_URL_OVERRIDE" ]; then
+    BOOTSTRAP_ARGS+=(
+        --resource-url
+        "$RESOURCE_URL_OVERRIDE"
+    )
+fi
+
+"$REPO_DIR/bootstrap.sh" "${BOOTSTRAP_ARGS[@]}"
 
 touch "$REPO_DIR/.restore-complete"
 chmod 0600 "$REPO_DIR/.restore-complete"

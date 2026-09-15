@@ -441,6 +441,20 @@
     label: "{{ item.item }}"
   no_log: true
 
+- name: Write non-secret Portfolio MCP runtime configuration
+  ansible.builtin.copy:
+    dest: "{{ portfolio_runtime_env_file }}"
+    owner: root
+    group: "{{ portfolio_service_group }}"
+    mode: "0640"
+    content: |
+      PORTFOLIO_PUBLIC_HOST="{{ portfolio_public_host }}"
+      PORTFOLIO_RESOURCE_URL="{{ portfolio_resource_url }}"
+      PORTFOLIO_AUTH0_DOMAIN="{{ portfolio_auth0_domain }}"
+      PORTFOLIO_AUTH0_CLIENT_ID="{{ portfolio_auth0_client_id }}"
+      PORTFOLIO_REQUIRED_SCOPE="{{ portfolio_required_scope }}"
+  register: portfolio_runtime_env_copy
+
 - name: Determine whether controlled service restart is required
   ansible.builtin.set_fact:
     portfolio_service_restart_required: >-
@@ -449,6 +463,7 @@
         (portfolio_dependency_sync.changed | default(false)) or
         (portfolio_application_copy.changed | default(false)) or
         (portfolio_service_unit_copy.changed | default(false)) or
+        (portfolio_runtime_env_copy.changed | default(false)) or
         (portfolio_recovery_auth_copy.changed | default(false))
       }}
   changed_when: false

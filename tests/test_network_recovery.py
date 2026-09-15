@@ -28,8 +28,8 @@ def test_network_contract_uses_verified_identity_not_static_ip():
 
     assert "portfolio_tailscale_expected_hostname: portfolio-hub" in text
     assert (
-        "portfolio_tailscale_expected_dns_name: "
-        "portfolio-hub.tail894a11.ts.net."
+        'portfolio_tailscale_expected_dns_name: '
+        '"{{ portfolio_public_host }}."'
     ) in text
 
     assert "100.93.219.125" not in text
@@ -72,8 +72,11 @@ def test_tailscale_identity_gate_precedes_firewall_mutation():
     firewall = text.index("Set UFW default incoming policy")
 
     assert identity < firewall
-    assert "sudo tailscale up --hostname=portfolio-hub" in text
-    assert "portfolio-hub.tail894a11.ts.net." in text
+    assert (
+        "sudo tailscale up --hostname="
+        "{{ portfolio_tailscale_expected_hostname }}"
+    ) in text
+    assert "portfolio_tailscale_expected_dns_name" in text
 
 
 def test_tailscale_preferences_preserve_verified_production_behavior():
@@ -92,7 +95,7 @@ def test_funnel_is_persistent_and_targets_loopback_mcp():
     assert 'portfolio_funnel_target: "http://127.0.0.1:8000"' in vars_text
     assert (
         'portfolio_funnel_public_url: '
-        '"https://portfolio-hub.tail894a11.ts.net"'
+        '"https://{{ portfolio_public_host }}"'
     ) in vars_text
 
     assert "- --bg" in tasks_text

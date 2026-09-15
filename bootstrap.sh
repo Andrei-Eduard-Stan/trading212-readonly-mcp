@@ -9,6 +9,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECOVERY_BUNDLE=""
 RECOVERY_DIR=""
 
+PUBLIC_HOST_OVERRIDE=""
+RESOURCE_URL_OVERRIDE=""
+TAILSCALE_HOSTNAME_OVERRIDE=""
+
 fail() {
     printf '[FAIL] %s\n' "$1" >&2
     exit 1
@@ -78,6 +82,15 @@ Options:
       Unlock an encrypted Trading 212 recovery bundle and use it only for
       this deployment run.
 
+  --public-host HOST
+      Override the public Funnel/MCP hostname for this deployment.
+
+  --tailscale-hostname HOST
+      Override the expected short Tailscale node hostname.
+
+  --resource-url URL
+      Override the OAuth/MCP resource URL independently of the public host.
+
   -h, --help
       Show this help.
 USAGE
@@ -106,6 +119,21 @@ while [ "$#" -gt 0 ]; do
             RECOVERY_BUNDLE="$2"
             shift 2
             ;;
+        --public-host)
+            [ "$#" -ge 2 ] || fail "--public-host requires a value"
+            PUBLIC_HOST_OVERRIDE="$2"
+            shift 2
+            ;;
+        --tailscale-hostname)
+            [ "$#" -ge 2 ] || fail "--tailscale-hostname requires a value"
+            TAILSCALE_HOSTNAME_OVERRIDE="$2"
+            shift 2
+            ;;
+        --resource-url)
+            [ "$#" -ge 2 ] || fail "--resource-url requires a value"
+            RESOURCE_URL_OVERRIDE="$2"
+            shift 2
+            ;;
         -h|--help)
             usage
             exit 0
@@ -115,6 +143,22 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+if [ -n "$PUBLIC_HOST_OVERRIDE" ] || [ -n "$TAILSCALE_HOSTNAME_OVERRIDE" ]; then
+    [ -n "$PUBLIC_HOST_OVERRIDE" ] && [ -n "$TAILSCALE_HOSTNAME_OVERRIDE" ] || \
+        fail "--public-host and --tailscale-hostname must be supplied together"
+
+    [[ "$PUBLIC_HOST_OVERRIDE" =~ ^[A-Za-z0-9.-]+$ ]] || \
+        fail "--public-host contains invalid characters"
+
+    [[ "$TAILSCALE_HOSTNAME_OVERRIDE" =~ ^[A-Za-z0-9-]+$ ]] || \
+        fail "--tailscale-hostname contains invalid characters"
+fi
+
+if [ -n "$RESOURCE_URL_OVERRIDE" ]; then
+    [[ "$RESOURCE_URL_OVERRIDE" =~ ^https://[^[:space:]]+/mcp$ ]] || \
+        fail "--resource-url must be an HTTPS URL ending in /mcp"
+fi
 
 printf 'Trading 212 Read-Only MCP Bootstrap\n'
 printf 'Mode: deployment\n\n'
@@ -153,6 +197,22 @@ fi
 cd "$ROOT/deploy/ansible"
 
 ANSIBLE_ARGS=(site.yml)
+
+if [ -n "$PUBLIC_HOST_OVERRIDE" ]; then
+    ANSIBLE_ARGS+=(
+        --extra-vars
+        "portfolio_public_host=$PUBLIC_HOST_OVERRIDE"
+        --extra-vars
+        "portfolio_tailscale_expected_hostname=$TAILSCALE_HOSTNAME_OVERRIDE"
+    )
+fi
+
+if [ -n "$RESOURCE_URL_OVERRIDE" ]; then
+    ANSIBLE_ARGS+=(
+        --extra-vars
+        "portfolio_resource_url=$RESOURCE_URL_OVERRIDE"
+    )
+fi
 
 if [ -n "$RECOVERY_DIR" ]; then
     ANSIBLE_ARGS+=(

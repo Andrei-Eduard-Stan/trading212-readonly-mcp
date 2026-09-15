@@ -88,9 +88,14 @@ def test_service_start_or_restart_occurs_only_after_secret_gate():
 def test_deployment_does_not_embed_broker_auth_values():
     text = TASKS.read_text(encoding="utf-8")
 
-    recovery_section = text[
-        text.index("- name: Inspect optional broker auth recovery directory") :
-    ]
+    recovery_start = text.index(
+        "- name: Inspect optional broker auth recovery directory"
+    )
+    recovery_end = text.index(
+        "- name: Write non-secret Portfolio MCP runtime configuration"
+    )
+
+    recovery_section = text[recovery_start:recovery_end]
 
     assert "content:" not in recovery_section
     assert "lookup(" not in recovery_section

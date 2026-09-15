@@ -1,3 +1,4 @@
+import os
 import jwt
 from datetime import datetime
 from time import monotonic
@@ -18,18 +19,40 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp_types import ToolAnnotations
 
 
-PUBLIC_HOST = "portfolio-hub.tail894a11.ts.net"
+DEFAULT_PUBLIC_HOST = "portfolio-hub.tail894a11.ts.net"
+DEFAULT_RESOURCE_URL = "https://portfolio-hub.tail894a11.ts.net/mcp"
+DEFAULT_AUTH0_DOMAIN = "dev-portfolio-os-mcp.uk.auth0.com"
+DEFAULT_AUTH0_CLIENT_ID = "tpc_4JWsLVNpgaz5gg5F5XUNHK"
+DEFAULT_REQUIRED_SCOPE = "portfolio:read"
 
-RESOURCE_URL = f"https://{PUBLIC_HOST}/mcp"
+PUBLIC_HOST = os.environ.get(
+    "PORTFOLIO_PUBLIC_HOST",
+    DEFAULT_PUBLIC_HOST,
+)
 
-AUTH0_DOMAIN = "dev-portfolio-os-mcp.uk.auth0.com"
+RESOURCE_URL = os.environ.get(
+    "PORTFOLIO_RESOURCE_URL",
+    DEFAULT_RESOURCE_URL,
+)
+
+AUTH0_DOMAIN = os.environ.get(
+    "PORTFOLIO_AUTH0_DOMAIN",
+    DEFAULT_AUTH0_DOMAIN,
+)
+
 AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/"
 AUTH0_JWKS_URL = f"https://{AUTH0_DOMAIN}/.well-known/jwks.json"
 
 # Third-Party ChatGPT Portfolio OS
-AUTH0_CLIENT_ID = "tpc_4JWsLVNpgaz5gg5F5XUNHK"
+AUTH0_CLIENT_ID = os.environ.get(
+    "PORTFOLIO_AUTH0_CLIENT_ID",
+    DEFAULT_AUTH0_CLIENT_ID,
+)
 
-REQUIRED_SCOPE = "portfolio:read"
+REQUIRED_SCOPE = os.environ.get(
+    "PORTFOLIO_REQUIRED_SCOPE",
+    DEFAULT_REQUIRED_SCOPE,
+)
 
 
 transport_security = TransportSecuritySettings(

@@ -4,8 +4,9 @@
     that:
       - portfolio_bind_host == "127.0.0.1"
       - (portfolio_bind_port | int) == 8000
-      - portfolio_tailscale_expected_hostname == "portfolio-hub"
-      - portfolio_tailscale_expected_dns_name == "portfolio-hub.tail894a11.ts.net."
+      - (portfolio_tailscale_expected_hostname | string | length) > 0
+      - (portfolio_tailscale_expected_dns_name | string | length) > 1
+      - portfolio_tailscale_expected_dns_name == (portfolio_public_host ~ ".")
       - portfolio_tailscale_interface == "tailscale0"
     fail_msg: "Portfolio network recovery contract is inconsistent."
 
@@ -170,7 +171,7 @@
     fail_msg: >-
       Tailscale is not ready. No firewall changes were performed.
       Authenticate with:
-      sudo tailscale up --hostname=portfolio-hub
+      sudo tailscale up --hostname={{ portfolio_tailscale_expected_hostname }}
       Then reconnect to the replacement host over Tailscale and rerun bootstrap.
 
 - name: Parse Tailscale status
@@ -185,11 +186,11 @@
       - portfolio_tailscale_status["Self"]["DNSName"] == portfolio_tailscale_expected_dns_name
     fail_msg: >-
       Tailscale identity does not match the verified production contract.
-      Expected portfolio-hub / portfolio-hub.tail894a11.ts.net.
+      Expected {{ portfolio_tailscale_expected_hostname }} / {{ portfolio_tailscale_expected_dns_name }}
       No firewall changes were performed.
       If Tailscale assigned portfolio-hub-1 or another suffix, resolve the
       stale portfolio-hub node in the Tailscale control plane, authenticate
-      again with sudo tailscale up --hostname=portfolio-hub, and rerun bootstrap.
+      again with sudo tailscale up --hostname={{ portfolio_tailscale_expected_hostname }}, and rerun bootstrap.
 
 - name: Verify Tailscale interface exists
   ansible.builtin.command:

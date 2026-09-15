@@ -13,6 +13,7 @@ WorkingDirectory=/opt/portfolio-hub
 
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=-/etc/portfolio-hub/portfolio-mcp.env
 
 ExecStart=/opt/portfolio-hub/venv/bin/python /opt/portfolio-hub/server.py
 
