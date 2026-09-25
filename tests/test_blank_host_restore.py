@@ -92,12 +92,57 @@ def test_restore_does_not_require_github_credentials_or_network_clone():
         assert value not in text
 
 
-def test_failed_clone_is_cleaned_up():
+def test_only_unvalidated_clone_created_by_current_run_is_cleaned_up():
     text = RESTORE.read_text(encoding="utf-8")
 
-    assert "trap cleanup_failed_clone EXIT" in text
+    assert 'REPO_CREATED_THIS_RUN=0' in text
+    assert 'REPO_VALIDATED=0' in text
+    assert "trap cleanup_unvalidated_clone EXIT" in text
+
+    assert (
+        '[ "${REPO_CREATED_THIS_RUN:-0}" -eq 1 ]'
+        in text
+    )
+    assert (
+        '[ "${REPO_VALIDATED:-0}" -eq 0 ]'
+        in text
+    )
     assert 'rm -rf -- "$REPO_DIR"' in text
-    assert ".restore-complete" in text
+
+
+def test_validated_repository_can_be_reused_after_bootstrap_failure():
+    text = RESTORE.read_text(encoding="utf-8")
+
+    assert (
+        "[INFO] Reusing existing reconstructed repository."
+        in text
+    )
+    assert (
+        'ACTUAL_COMMIT="$(git -C "$REPO_DIR" rev-parse HEAD)"'
+        in text
+    )
+    assert (
+        '[ "$ACTUAL_COMMIT" = "$EXPECTED_COMMIT" ]'
+        in text
+    )
+    assert (
+        'git -C "$REPO_DIR" status --porcelain --untracked-files=all'
+        in text
+    )
+    assert "REPO_VALIDATED=1" in text
+
+
+def test_restore_completion_marker_is_outside_git_repository():
+    text = RESTORE.read_text(encoding="utf-8")
+
+    assert (
+        'RESTORE_MARKER="$RESTORE_ROOT/.restore-complete"'
+        in text
+    )
+    assert 'touch "$RESTORE_MARKER"' in text
+    assert 'chmod 0600 "$RESTORE_MARKER"' in text
+
+    assert 'touch "$REPO_DIR/.restore-complete"' not in text
 
 
 def test_bundle_verification_runs_inside_restored_repository():

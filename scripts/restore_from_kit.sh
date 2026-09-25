@@ -12,6 +12,10 @@ TAILSCALE_HOSTNAME_OVERRIDE=""
 
 RESTORE_ROOT="/opt/trading212-readonly-mcp-recovery"
 REPO_DIR="$RESTORE_ROOT/repository"
+RESTORE_MARKER="$RESTORE_ROOT/.restore-complete"
+
+REPO_CREATED_THIS_RUN=0
+REPO_VALIDATED=0
 
 fail() {
     printf '[FAIL] %s\n' "$1" >&2
@@ -45,15 +49,15 @@ Options:
 USAGE
 }
 
-cleanup_failed_clone() {
-    if [ -n "${REPO_DIR:-}" ] &&
-       [ -d "$REPO_DIR" ] &&
-       [ ! -f "$REPO_DIR/.restore-complete" ]; then
+cleanup_unvalidated_clone() {
+    if [ "${REPO_CREATED_THIS_RUN:-0}" -eq 1 ] &&
+       [ "${REPO_VALIDATED:-0}" -eq 0 ] &&
+       { [ -e "${REPO_DIR:-}" ] || [ -L "${REPO_DIR:-}" ]; }; then
         rm -rf -- "$REPO_DIR"
     fi
 }
 
-trap cleanup_failed_clone EXIT
+trap cleanup_unvalidated_clone EXIT
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -157,12 +161,22 @@ EXPECTED_COMMIT="${RELEASE_LINES[0]}"
 [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || \
     fail "release.txt must contain exactly one full 40-character lowercase Git commit"
 
-mkdir -p "$RESTORE_ROOT"
+if [ -e "$RESTORE_ROOT" ] || [ -L "$RESTORE_ROOT" ]; then
+    [ -d "$RESTORE_ROOT" ] && [ ! -L "$RESTORE_ROOT" ] || \
+        fail "restore root exists but is not a real directory"
+else
+    mkdir -p "$RESTORE_ROOT"
+fi
 
-[ ! -e "$REPO_DIR" ] || \
-    fail "restore repository destination already exists"
+if [ -e "$REPO_DIR" ] || [ -L "$REPO_DIR" ]; then
+    [ -d "$REPO_DIR" ] && [ ! -L "$REPO_DIR" ] || \
+        fail "restore repository destination is not a real directory"
 
-git clone "$KIT_DIR/repository.bundle" "$REPO_DIR"
+    printf '[INFO] Reusing existing reconstructed repository.\n'
+else
+    REPO_CREATED_THIS_RUN=1
+    git clone "$KIT_DIR/repository.bundle" "$REPO_DIR"
+fi
 
 git -C "$REPO_DIR" bundle verify "$KIT_DIR/repository.bundle"
 
@@ -171,14 +185,25 @@ pass "Git bundle"
 git -C "$REPO_DIR" cat-file -e "${EXPECTED_COMMIT}^{commit}" || \
     fail "recorded release commit is absent from repository bundle"
 
-git -C "$REPO_DIR" checkout --detach "$EXPECTED_COMMIT"
+if [ "$REPO_CREATED_THIS_RUN" -eq 1 ]; then
+    git -C "$REPO_DIR" checkout --detach "$EXPECTED_COMMIT"
+fi
 
 ACTUAL_COMMIT="$(git -C "$REPO_DIR" rev-parse HEAD)"
 
 [ "$ACTUAL_COMMIT" = "$EXPECTED_COMMIT" ] || \
     fail "restored repository commit does not match release.txt"
 
-pass "Exact repository commit $ACTUAL_COMMIT"
+RESTORE_DIRTY="$(
+    git -C "$REPO_DIR" status --porcelain --untracked-files=all
+)"
+
+[ -z "$RESTORE_DIRTY" ] || \
+    fail "restored repository is not clean"
+
+REPO_VALIDATED=1
+
+pass "Exact clean repository commit $ACTUAL_COMMIT"
 
 [ -x "$REPO_DIR/bootstrap.sh" ] || \
     fail "restored bootstrap.sh is missing or not executable"
@@ -209,9 +234,14 @@ if [ -n "$RESOURCE_URL_OVERRIDE" ]; then
     )
 fi
 
+[ ! -L "$RESTORE_MARKER" ] || \
+    fail "restore completion marker must not be a symlink"
+
+rm -f -- "$RESTORE_MARKER"
+
 "$REPO_DIR/bootstrap.sh" "${BOOTSTRAP_ARGS[@]}"
 
-touch "$REPO_DIR/.restore-complete"
-chmod 0600 "$REPO_DIR/.restore-complete"
+touch "$RESTORE_MARKER"
+chmod 0600 "$RESTORE_MARKER"
 
 printf '\nSTATUS: DISASTER RECOVERY COMPLETED\n'

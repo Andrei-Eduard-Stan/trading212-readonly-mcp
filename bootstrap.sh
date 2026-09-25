@@ -111,6 +111,9 @@ cleanup() {
 }
 
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
