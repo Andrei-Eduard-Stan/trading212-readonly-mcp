@@ -75,3 +75,47 @@ def test_dependency_sync_is_conditionally_idempotent():
     )[0]
 
     assert "changed_when: false" not in sync_section
+
+
+def test_python_discovery_uses_supported_uv_install_dir_environment():
+    text = TASKS.read_text(encoding="utf-8")
+
+    before_section = text.split(
+        "- name: Locate pinned managed Python",
+        1,
+    )[1].split(
+        "- name: Install pinned managed Python",
+        1,
+    )[0]
+
+    install_section = text.split(
+        "- name: Install pinned managed Python",
+        1,
+    )[1].split(
+        "- name: Locate installed pinned Python",
+        1,
+    )[0]
+
+    after_section = text.split(
+        "- name: Locate installed pinned Python",
+        1,
+    )[1].split(
+        "- name: Inspect deployed virtual environment",
+        1,
+    )[0]
+
+    for section in (before_section, after_section):
+        assert "python" in section
+        assert "find" in section
+        assert "--managed-python" in section
+        assert "--install-dir" not in section
+        assert (
+            'UV_PYTHON_INSTALL_DIR: '
+            '"{{ portfolio_python_install_dir }}"'
+        ) in section
+
+    assert "python" in install_section
+    assert "install" in install_section
+    assert "--install-dir" in install_section
+    assert '"{{ portfolio_python_install_dir }}"' in install_section
+    assert "--no-bin" in install_section

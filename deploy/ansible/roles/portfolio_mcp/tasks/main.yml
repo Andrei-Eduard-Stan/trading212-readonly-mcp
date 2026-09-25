@@ -160,8 +160,8 @@
       - find
       - "{{ portfolio_python_version }}"
       - --managed-python
-      - --install-dir
-      - "{{ portfolio_python_install_dir }}"
+  environment:
+    UV_PYTHON_INSTALL_DIR: "{{ portfolio_python_install_dir }}"
   register: portfolio_python_before
   changed_when: false
   failed_when: false
@@ -186,8 +186,8 @@
       - find
       - "{{ portfolio_python_version }}"
       - --managed-python
-      - --install-dir
-      - "{{ portfolio_python_install_dir }}"
+  environment:
+    UV_PYTHON_INSTALL_DIR: "{{ portfolio_python_install_dir }}"
   register: portfolio_python_after
   changed_when: false
 
