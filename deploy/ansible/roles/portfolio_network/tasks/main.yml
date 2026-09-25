@@ -390,7 +390,7 @@
       - ufw
       - allow
       - in
-      - on
+      - "on"
       - "{{ portfolio_tailscale_interface }}"
       - to
       - any
